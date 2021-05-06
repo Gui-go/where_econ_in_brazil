@@ -7,10 +7,14 @@ Python script to show where the economists are located (working) in Brazil
 
 import pyspark
 import pandas as pd
+import math
 
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import split, udf
 from pyspark.sql.types import FloatType, StringType, IntegerType
+
+import geopandas as gpd
+import matplotlib.pyplot as plt
 
 from src.fct.data_loc import get_loc
 from src.fct.data_rais import rais_etl
@@ -27,55 +31,45 @@ rais_br = rais_etl(
     "data/RAIS_VINC_PUB_SUL.txt"] 
 )
 
+# rais_br.to_csv(r'data/rais_br_econ.csv')
+# rais_br = pd.read_csv('data/rais_br_econ.csv')
+
 rais_br.shape
-rais_br = rais_br.rename({"mun_trab": "cd_mun_rais"}, axis=1)
+rais_br = rais_br.rename({"mun_trab": "cd_mun_rais"}, axis=1) # This must be in rais_etl
 rais_br.cd_mun_rais = rais_br.cd_mun_rais.astype(str)
 
+# Localidades IBGE
 local = get_loc(["all"])
 local.columns
-
 local["cd_mun_rais"] = local["id"].astype(str).str[:-1]
 
+# Join 1
 df = rais_br.merge(local, on="cd_mun_rais", how="inner")
 
-dfs = df.groupby("cd_mun_rais")["idade"].count()
-dfs = pd.DataFrame({"cd_mun_rais": dfs.index, "qt_econ": dfs}).reset_index(drop=True)
+# Group_by rg_imediata
+dfs = pd.DataFrame(
+    {
+        "cd_rg_imediata": df.groupby("regiao_imediata_id")["vl_remun_media_nom"].mean().index.astype(str), 
+        "nm_rg_imediata": df.groupby("regiao_imediata_nome")["vl_remun_media_nom"].mean().index,
+        "mean_econ_remu": df.groupby("regiao_imediata_id")["vl_remun_media_nom"].mean().astype(int), 
+        "qt_econ": df.groupby("regiao_imediata_id")["vl_remun_media_nom"].count(),
+        "log_qt_econ": df.groupby("regiao_imediata_id")["vl_remun_media_nom"].count().apply(lambda x: math.log(x))
+    }
+).reset_index(drop=True)
 
+# Shapefile BR_RG_Imediatas_2020
+# sc = gpd.read_file("data/SC_Municipios_2020/SC_Municipios_2020.shp")
+br = gpd.read_file("data/BR_RG_Imediatas_2020/BR_RG_Imediatas_2020.shp")
 
-df2 = sc.merge(dfs, on='cd_mun_rais', how="inner")
+br['cd_rg_imediata'] = br['CD_RGI'].astype(str)
+br.cd_rg_imediata = br.cd_rg_imediata.astype(str)
 
-df2.plot(column='qt_econ', cmap='OrRd', edgecolor='k', legend=True)
+# Join with .shp
+dfshp = br.merge(dfs, on='cd_rg_imediata', how="inner")
+
+dfshp.plot(column='qt_econ', cmap='OrRd', edgecolor='k', legend=True)
+dfshp.plot(column='mean_econ_remu', cmap='OrRd', edgecolor='k', legend=True)
+dfshp.plot(column='log_qt_econ', cmap='OrRd', edgecolor='k', legend=True)
 plt.show()
-
-
-#______________________________________________________________
-4205407 in list(rais_br.mun_trab)
-420540 in list(rais_br.mun_trab)
-410690 in list(rais_br.mun_trab.iloc[:, 1])
-
-dd = rais_br.groupby("mun_trab")["idade"].count()
-rais_summed = pd.DataFrame({"cd_mun_rais": dd.index, "qt_econ":dd}).reset_index(drop=True)
-
-
-
-import geopandas as gpd
-import matplotlib.pyplot as plt
-
-# We use a PySAL example shapefile
-import libpysal as ps
-
-sc = gpd.read_file("data/SC_Municipios_2020/SC_Municipios_2020.shp")
-sc['cd_mun_rais'] = sc['CD_MUN'].str[:-1]
-
-sc.cd_mun_rais = sc.cd_mun_rais.astype(str)
-rais_summed.cd_mun_rais = rais_summed.cd_mun_rais.astype(str)
-
-df = sc.merge(rais_summed, on='cd_mun_rais', how="inner")
-
-df.plot(column='qt_econ', cmap='OrRd', edgecolor='k', legend=True)
-plt.show()
-
-
-
 
 

@@ -57,6 +57,9 @@ def rais_etl(files: list) -> pd.DataFrame:
         # Turn it into a pandas DataFrame
         rais_df = rais_df.toPandas()
 
+        # Confirmed which file is being transformed
+        print(f"{file.split('/')[1].split('.')[0]} transformed")
+
         # Append each transformed sample
         rais_lista.append(rais_df)
     
